@@ -1,0 +1,15 @@
+<!-- The scenario runner (the MCP client side). Logs go to stderr; the transcript goes to stdout. -->
+<configuration>
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <target>System.err</target>
+        <encoder>
+            <pattern>  [client log] %-5level %logger{0} - %.-200msg%n%nopex</pattern>
+        </encoder>
+    </appender>
+    <root level="WARN">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+    <logger name="io.modelcontextprotocol.client.transport.StdioClientTransport" level="ERROR"/>
+    <!-- Reactor repeats "onErrorDropped" for every call on a dead transport; the transcript already shows the failure. -->
+    <logger name="reactor.core.publisher.Operators" level="OFF"/>
+</configuration>

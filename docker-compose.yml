@@ -1,0 +1,4 @@
+services:
+  demo:
+    build: .
+    image: mcp-integration-mistakes-java:local

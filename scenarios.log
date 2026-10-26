@@ -1,0 +1,92 @@
+
+== 1. Logging to stdout on the stdio transport
+[logback-stdout.xml --variant=good]
+[client log] ERROR StdioClientTransport - Error processing inbound message for line: 08:25:37.823 INFO  McpAsyncServer - Client initialize request - Protocol: 2025-11-25, Capabilities: ClientCapabilities[experimental=null, roots=null, samplin
+  initialize                   -> RuntimeException: Client failed to initialize by explicit API call  (20.1 s)
+  tools/list                   -> RuntimeException: Client failed to initialize listing tools  (20.0 s)
+  reserve_stock                -> RuntimeException: Client failed to initialize calling tool  (20.0 s)
+  tools/list again             -> RuntimeException: Client failed to initialize listing tools  (20.0 s)
+[logback-stdout-warn.xml --variant=good]
+  initialize                   -> protocol 2025-11-25  (0.8 s)
+  tools/list                   -> 7 tools  (0.0 s)
+[client log] ERROR StdioClientTransport - Error processing inbound message for line: 08:26:58.141 WARN  StockTools - SKU-00042 is below its reorder point after reserving 3
+  reserve_stock                -> ReactiveException: java.util.concurrent.TimeoutException: Did not observe any item or terminal signal within 20000ms in 'source(MonoDeferContextual)' (and no fallback has been configured)  (20.0 s)
+  tools/list again             -> ReactiveException: java.util.concurrent.TimeoutException: Did not observe any item or terminal signal within 20000ms in 'source(MonoDeferContextual)' (and no fallback has been configured)  (20.0 s)
+[logback-stderr.xml --variant=good]
+  initialize                   -> protocol 2025-11-25  (0.6 s)
+  tools/list                   -> 7 tools  (0.0 s)
+  [server stderr] 08:27:38.768 WARN  StockTools - SKU-00042 is below its reorder point after reserving 3
+  reserve_stock                -> isError=false, text="Reserved 3 x SKU-00042."  (0.0 s)
+  tools/list again             -> 7 tools  (0.0 s)
+[logback-stdout.xml --variant=good --guard-stdout]
+  initialize                   -> protocol 2025-11-25  (0.5 s)
+  tools/list                   -> 7 tools  (0.0 s)
+  [server stderr] 08:27:39.361 WARN  StockTools - SKU-00042 is below its reorder point after reserving 3
+  reserve_stock                -> isError=false, text="Reserved 3 x SKU-00042."  (0.0 s)
+  tools/list again             -> 7 tools  (0.0 s)
+
+== 2. Throwing from a tool instead of returning a tool error
+[bad]
+  [server stderr] 08:27:39.895 WARN  McpServerSession - Error handling request d8919720-1 [tools/call]
+  [server stderr] java.lang.IllegalStateException: Illegal state transition
+  cancel_order ORD-000002      -> JSON-RPC error -32603: Illegal state transition  (0.0 s)
+  [server stderr] 08:27:39.901 WARN  McpServerSession - Error handling request d8919720-2 [tools/call]
+  [server stderr] java.lang.IllegalArgumentException: Order not found
+  cancel_order ORD-999999      -> JSON-RPC error -32603: Order not found  (0.0 s)
+  [server stderr] 08:27:39.908 WARN  ToolInputValidator - Tool (cancel_order) input validation failed: Validation failed: JSON schema validation errors: [/order_id: does not match the regex pattern ^ORD-[0-9]{6}$]
+  cancel_order ORD-42 (schema) -> isError=true, text="Tool (cancel_order) input validation failed: Validation failed: JSON schema validation errors: [/order_id: does not match the regex pattern ^ORD-[0-9]{6}$]"  (0.0 s)
+[good]
+  cancel_order ORD-000002      -> isError=true, text="Order ORD-000002 is shipped, and only placed or paid orders can be cancelled. Tell the user it cannot be cancelled; do not retry."  (0.0 s)
+  cancel_order ORD-999999      -> isError=true, text="No order ORD-999999 exists. Find the id with search_orders first."  (0.0 s)
+  [server stderr] 08:27:40.444 WARN  ToolInputValidator - Tool (cancel_order) input validation failed: Validation failed: JSON schema validation errors: [/order_id: does not match the regex pattern ^ORD-[0-9]{6}$]
+  cancel_order ORD-42 (schema) -> isError=true, text="Tool (cancel_order) input validation failed: Validation failed: JSON schema validation errors: [/order_id: does not match the regex pattern ^ORD-[0-9]{6}$]"  (0.0 s)
+
+== 3. Treating the tool catalog as an API instead of a prompt
+  endpoints  35 tools, tools/list result = 19,651 bytes
+  good        7 tools, tools/list result = 2,544 bytes
+  map  launch 1: reserve_stock,cancel_order,get_order,export_status,exports_written,start_export,search_orders
+  map  launch 2: exports_written,start_export,search_orders,reserve_stock,cancel_order,get_order,export_status
+  map  launch 3: exports_written,export_status,get_order,cancel_order,reserve_stock,search_orders,start_export
+  map  launch 4: start_export,exports_written,export_status,get_order,cancel_order,reserve_stock,search_orders
+  map  launch 5: reserve_stock,search_orders,start_export,exports_written,export_status,get_order,cancel_order
+  map  distinct orderings over 5 launches: 5
+  list launch 1: reserve_stock,cancel_order,search_orders,get_order,start_export,export_status,exports_written
+  list launch 2: reserve_stock,cancel_order,search_orders,get_order,start_export,export_status,exports_written
+  list launch 3: reserve_stock,cancel_order,search_orders,get_order,start_export,export_status,exports_written
+  list launch 4: reserve_stock,cancel_order,search_orders,get_order,start_export,export_status,exports_written
+  list launch 5: reserve_stock,cancel_order,search_orders,get_order,start_export,export_status,exports_written
+  list distinct orderings over 5 launches: 1
+
+== 4. Returning whatever the data happens to weigh
+  list_orders, 5,000 orders    -> isError=false, text content 1,266,288 bytes  (0.1 s)
+  search_orders limit=20       -> isError=false, text content 2,407 bytes, next_cursor=ORD-000020  (0.0 s)
+  search_orders last page      -> isError=false, 10 orders, next_cursor=null  (0.0 s)
+  [server stderr] 08:27:48.008 WARN  ToolInputValidator - Tool (search_orders) input validation failed: Validation failed: JSON schema validation errors: [/limit: must have a maximum value of 50]
+  search_orders limit=500      -> isError=true, text="Tool (search_orders) input validation failed: Validation failed: JSON schema validation errors: [/limit: must have a maximum value of 50]"  (0.0 s)
+[client log] ERROR StdioClientTransport - Inbound message exceeds the maximum allowed size
+  list_orders, 120,000 orders  -> ReactiveException: java.util.concurrent.TimeoutException: Did not observe any item or terminal signal within 20000ms in 'source(MonoDeferContextual)' (and no fallback has been configured)  (20.0 s)
+  tools/list after that        -> ReactiveException: java.util.concurrent.TimeoutException: Did not observe any item or terminal signal within 20000ms in 'source(MonoDeferContextual)' (and no fallback has been configured)  (20.0 s)
+
+== 5. Holding a request open for longer than the client waits
+[bad] export takes 25 s; client requestTimeout is the SDK default (20 s)
+  export_orders, attempt 1     -> ReactiveException: java.util.concurrent.TimeoutException: Did not observe any item or terminal signal within 20000ms in 'source(MonoDeferContextual)' (and no fallback has been configured)  (20.0 s)
+  exports_written              -> isError=false, text="1"  (0.0 s)
+  export_orders, attempt 2     -> ReactiveException: java.util.concurrent.TimeoutException: Did not observe any item or terminal signal within 20000ms in 'source(MonoDeferContextual)' (and no fallback has been configured)  (20.0 s)
+  exports_written              -> isError=false, text="2"  (0.0 s)
+[good] same 25 s export behind a handle and an idempotency key
+  start_export, attempt 1      -> isError=false, text="Export exp_1b5b98f2-eff2-41e1-bad9-85d341f4d3a3 is running."
+  start_export, attempt 2      -> isError=false, text="Export exp_1b5b98f2-eff2-41e1-bad9-85d341f4d3a3 is running."  (0.0 s)
+  export_status                -> Export exp_1b5b98f2-eff2-41e1-bad9-85d341f4d3a3 is running.
+  export_status                -> Export exp_1b5b98f2-eff2-41e1-bad9-85d341f4d3a3 is running.
+  export_status                -> Export exp_1b5b98f2-eff2-41e1-bad9-85d341f4d3a3 is running.
+  export_status                -> Export exp_1b5b98f2-eff2-41e1-bad9-85d341f4d3a3 is running.
+  export_status                -> Export exp_1b5b98f2-eff2-41e1-bad9-85d341f4d3a3 is done.
+  exports_written              -> isError=false, text="1"  (0.0 s)
+[good, failing bucket] 1 s export; the first one fails
+  export_status                -> isError=false, text="Export exp_16a7be8c-f907-4887-ae2c-f6b5d1a5c774 is failed (reporting bucket unavailable); start it again."  (0.0 s)
+  start_export, same key       -> isError=false, text="Export exp_4058992f-fbb9-47f3-a060-39c45a1a99ef is running."
+  export_status                -> isError=false, text="Export exp_4058992f-fbb9-47f3-a060-39c45a1a99ef is done."  (0.0 s)
+  exports_written              -> isError=false, text="1"  (0.0 s)
+
+== expectations: 43 met, 0 unmet
+containers left running: 0
